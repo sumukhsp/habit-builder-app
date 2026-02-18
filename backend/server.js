@@ -13,7 +13,10 @@ app.use(cors());
 
 // Routes
 const authRoutes = require("./routes/authRoutes");
+const habitRoutes = require("./routes/habitRoutes");
+
 app.use("/api/auth", authRoutes);
+app.use("/api/habits", habitRoutes);
 
 app.get("/", (req, res) => {
   res.send("Habit Builder API Running");
