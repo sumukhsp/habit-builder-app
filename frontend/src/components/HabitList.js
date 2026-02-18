@@ -1,11 +1,23 @@
 import React, { useState } from "react";
 import API from "../api/api";
 
-function HabitRow({ habit, onChanged }) {
-  const [editing, setEditing] = useState(false);
-  const [title, setTitle] = useState(habit.title);
-  const [frequency, setFrequency] = useState(habit.frequency || "daily");
+function HabitCard({ habit, onChanged }) {
   const [loading, setLoading] = useState(false);
+
+  const colors = [
+    "#FF9800",
+    "#9C27B0",
+    "#00BCD4",
+    "#FF5722",
+    "#2196F3",
+    "#4CAF50",
+    "#FFC107",
+    "#E91E63",
+  ];
+
+  const getColor = (index) => colors[index % colors.length];
+  const habitIndex = Math.floor(Math.random() * colors.length);
+  const habitColor = getColor(habitIndex);
 
   const markComplete = async () => {
     setLoading(true);
@@ -20,22 +32,8 @@ function HabitRow({ habit, onChanged }) {
     }
   };
 
-  const save = async () => {
-    setLoading(true);
-    try {
-      await API.put(`/habits/${habit._id}`, { title: title.trim(), frequency });
-      setEditing(false);
-      onChanged();
-    } catch (err) {
-      const msg = err?.response?.data?.message || "Failed to update habit";
-      alert(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const remove = async () => {
-    if (!window.confirm("Delete this habit?")) return;
+  const deleteHabit = async () => {
+    if (!window.confirm(`Delete "${habit.title}"? This action cannot be undone.`)) return;
     setLoading(true);
     try {
       await API.delete(`/habits/${habit._id}`);
@@ -48,45 +46,124 @@ function HabitRow({ habit, onChanged }) {
     }
   };
 
-  return (
-    <div style={{ border: "1px solid #ddd", padding: 12, borderRadius: 8, display: "grid", gap: 10 }}>
-      {editing ? (
-        <>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} />
-          <select value={frequency} onChange={(e) => setFrequency(e.target.value)}>
-            <option value="daily">daily</option>
-            <option value="weekly">weekly</option>
-          </select>
-        </>
-      ) : (
-        <>
-          <div style={{ fontWeight: 600 }}>{habit.title}</div>
-          <div style={{ opacity: 0.7 }}>Frequency: {habit.frequency}</div>
-        </>
-      )}
+  const cardStyle = {
+    background: "white",
+    border: `2px solid ${habitColor}`,
+    borderRadius: "12px",
+    padding: "20px",
+    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.08)",
+    transition: "all 0.3s ease",
+    display: "flex",
+    flexDirection: "column",
+  };
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button onClick={markComplete} disabled={loading}>
-          Complete
+  const cardHoverStyle = {
+    ...cardStyle,
+    boxShadow: "0 8px 24px rgba(0, 0, 0, 0.12)",
+    transform: "translateY(-4px)",
+  };
+
+  const [isHover, setIsHover] = useState(false);
+
+  const headerStyle = {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: "12px",
+  };
+
+  const titleStyle = {
+    fontSize: "16px",
+    fontWeight: "700",
+    color: "#333",
+    flex: 1,
+  };
+
+  const badgeStyle = {
+    background: habitColor,
+    color: "white",
+    padding: "4px 10px",
+    borderRadius: "20px",
+    fontSize: "11px",
+    fontWeight: "600",
+    textTransform: "uppercase",
+    marginLeft: "10px",
+  };
+
+  const infoStyle = {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    margin: "12px 0",
+    fontSize: "13px",
+    color: "#666",
+  };
+
+  const iconStyle = {
+    width: "20px",
+    height: "20px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "16px",
+  };
+
+  const buttonContainerStyle = {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "8px",
+    marginTop: "16px",
+  };
+
+  const buttonStyle = (isPrimary) => ({
+    padding: "10px 16px",
+    background: isPrimary ? habitColor : "#f0f0f0",
+    color: isPrimary ? "white" : "#333",
+    border: "none",
+    borderRadius: "8px",
+    fontSize: "13px",
+    fontWeight: "600",
+    cursor: "pointer",
+    transition: "all 0.2s ease",
+  });
+
+  return (
+    <div
+      style={isHover ? cardHoverStyle : cardStyle}
+      onMouseEnter={() => setIsHover(true)}
+      onMouseLeave={() => setIsHover(false)}
+    >
+      <div style={headerStyle}>
+        <div style={titleStyle}>{habit.title}</div>
+        <div style={badgeStyle}>
+          {habit.frequency === "daily" ? "📅 Daily" : "📆 Weekly"}
+        </div>
+      </div>
+
+      <div style={infoStyle}>
+        <div style={iconStyle}>🔥</div>
+        <span>Streak: {habit.streak || 0} days</span>
+      </div>
+
+      <div style={buttonContainerStyle}>
+        <button
+          onClick={markComplete}
+          disabled={loading}
+          style={buttonStyle(true)}
+          onMouseEnter={(e) => (e.target.opacity = "0.9")}
+          onMouseLeave={(e) => (e.target.opacity = "1")}
+        >
+          ✓ Complete
         </button>
 
-        {editing ? (
-          <>
-            <button onClick={save} disabled={loading}>
-              Save
-            </button>
-            <button onClick={() => setEditing(false)} disabled={loading}>
-              Cancel
-            </button>
-          </>
-        ) : (
-          <button onClick={() => setEditing(true)} disabled={loading}>
-            Edit
-          </button>
-        )}
-
-        <button onClick={remove} disabled={loading}>
-          Delete
+        <button
+          onClick={deleteHabit}
+          disabled={loading}
+          style={buttonStyle(false)}
+          onMouseEnter={(e) => (e.target.background = "#e0e0e0")}
+          onMouseLeave={(e) => (e.target.background = "#f0f0f0")}
+        >
+          🗑 Delete
         </button>
       </div>
     </div>
@@ -94,12 +171,51 @@ function HabitRow({ habit, onChanged }) {
 }
 
 function HabitList({ habits, refreshHabits }) {
-  if (!habits?.length) return <p>No habits yet. Add one above.</p>;
+  const emptyStateStyle = {
+    textAlign: "center",
+    padding: "60px 20px",
+    color: "#999",
+  };
+
+  const emptyIconStyle = {
+    fontSize: "48px",
+    marginBottom: "16px",
+  };
+
+  const emptyTitleStyle = {
+    fontSize: "20px",
+    fontWeight: "600",
+    color: "#666",
+    marginBottom: "8px",
+  };
+
+  const emptyDescStyle = {
+    fontSize: "14px",
+    color: "#999",
+  };
+
+  const gridStyle = {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+    gap: "20px",
+  };
+
+  if (!habits?.length) {
+    return (
+      <div style={emptyStateStyle}>
+        <div style={emptyIconStyle}>📋</div>
+        <div style={emptyTitleStyle}>No habits yet</div>
+        <div style={emptyDescStyle}>
+          Add your first habit above to get started on your journey!
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ display: "grid", gap: 12 }}>
+    <div style={gridStyle}>
       {habits.map((habit) => (
-        <HabitRow key={habit._id} habit={habit} onChanged={refreshHabits} />
+        <HabitCard key={habit._id} habit={habit} onChanged={refreshHabits} />
       ))}
     </div>
   );
