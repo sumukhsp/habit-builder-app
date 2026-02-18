@@ -8,6 +8,7 @@ connectDB();
 
 const app = express();
 
+// Middleware
 app.use(express.json());
 app.use(cors());
 
@@ -22,9 +23,19 @@ app.use("/api/habits", habitRoutes);
 app.use("/api/completion", completionRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 
+// Health Check Route
+app.get("/health", (req, res) => {
+  res.json({ status: "Server Running" });
+});
+
+// Default Route
 app.get("/", (req, res) => {
   res.send("Habit Builder API Running");
 });
+
+// Error Middleware
+const errorHandler = require("./middleware/errorMiddleware");
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
