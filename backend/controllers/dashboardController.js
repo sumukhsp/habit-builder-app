@@ -5,7 +5,7 @@ const User = require("../models/User");
 
 exports.getDashboardStats = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user;
 
     // user info
     const user = await User.findById(userId).select("name");
@@ -22,9 +22,13 @@ exports.getDashboardStats = async (req, res) => {
 
     // completions ONLY for today
     const todayCompletions = await CompletionLog.find({
-      habitId: { $in: habits.map(h => h._id) },
+      habitId: { $in: habits.map((h) => h._id) },
+      userId,
       date: { $gte: today, $lt: tomorrow }
     });
+
+    // all completions for this user (used by frontend to render weekly grid and counts)
+    const completions = await CompletionLog.find({ userId }).sort({ date: -1 });
 
     // all streaks
     const streaks = await Streak.find({
@@ -45,6 +49,7 @@ exports.getDashboardStats = async (req, res) => {
       totalHabits: habits.length,
       todayCompletions: todayCompletions.length,
       percentage,
+      completions,
       streaks
     });
 

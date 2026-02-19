@@ -5,7 +5,7 @@ const Habit = require("../models/Habit");
 exports.markComplete = async (req, res) => {
   try {
     const { habitId } = req.body;
-    const userId = req.user.id;
+    const userId = req.user;
 
     if (!habitId) {
       return res.status(400).json({ message: "Habit ID is required" });

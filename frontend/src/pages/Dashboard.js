@@ -29,13 +29,23 @@ export default function Dashboard() {
 
       // Calculate daily goal percentage
       const today = new Date().toISOString().split("T")[0];
-      const todayCompletions = statsRes.data.completions?.filter(
-        (c) => c.date?.split("T")[0] === today
-      ) || [];
+      const todayCompletions =
+        statsRes.data.completions?.filter((c) => c.date?.split("T")[0] === today) || [];
+
+      const uniqueHabitIdsCompletedToday = new Set(
+        todayCompletions.map((c) => String(c.habitId))
+      );
+
       const percentage =
         habitsRes.data.length > 0
-          ? Math.round((todayCompletions.length / habitsRes.data.length) * 100)
+          ? Math.min(
+              Math.round(
+                (uniqueHabitIdsCompletedToday.size / habitsRes.data.length) * 100
+              ),
+              100
+            )
           : 0;
+
       setDailyGoalPercentage(percentage);
       setCompletions(statsRes.data.completions || []);
     } catch (err) {
@@ -82,15 +92,18 @@ export default function Dashboard() {
   const isHabitCompletedOnDate = (habitId, date) => {
     const dateStr = date.toISOString().split("T")[0];
     return completions.some(
-      (c) => c.habitId === habitId && c.date.split("T")[0] === dateStr
+      (c) =>
+        String(c.habitId) === String(habitId) &&
+        c.date.split("T")[0] === dateStr
     );
   };
 
   const getCompletionCountForHabit = (habitId) => {
-    return completions.filter((c) => c.habitId === habitId).length;
+    return completions.filter((c) => String(c.habitId) === String(habitId)).length;
   };
 
-  const handleMarkComplete = async (habitId) => {
+  const handleMarkComplete = async (habitId, e) => {
+    if (e) e.preventDefault();
     try {
       await API.post("/completion/complete", {
         habitId,
@@ -106,6 +119,27 @@ export default function Dashboard() {
   const colorMap = getHabitColorMap();
   const weekDays = getWeekDays();
   const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  const weeklyProgressPercentage = (() => {
+    if (!habits.length) return 0;
+
+    const weekStart = new Date(weekDays[0]);
+    weekStart.setHours(0, 0, 0, 0);
+    const weekEnd = new Date(weekDays[6]);
+    weekEnd.setHours(23, 59, 59, 999);
+
+    const uniqueHabitDayPairs = new Set(
+      completions
+        .filter((c) => {
+          const compDate = new Date(c.date);
+          return compDate >= weekStart && compDate <= weekEnd;
+        })
+        .map((c) => `${String(c.habitId)}|${String(c.date).split("T")[0]}`)
+    );
+
+    const totalPossible = habits.length * 7;
+    return Math.min(Math.round((uniqueHabitDayPairs.size / totalPossible) * 100), 100);
+  })();
 
   const containerStyle = {
     minHeight: "100vh",
@@ -406,18 +440,7 @@ export default function Dashboard() {
                 Weekly Progress
               </div>
               <div style={{ fontSize: "22px", fontWeight: "700", color: "#667eea" }}>
-                {habits.length > 0
-                  ? Math.round(
-                      (completions.filter((c) => {
-                        const weekStart = new Date(weekDays[0]);
-                        const weekEnd = new Date(weekDays[6]);
-                        const compDate = new Date(c.date);
-                        return compDate >= weekStart && compDate <= weekEnd;
-                      }).length /
-                        (habits.length * 7)) *
-                        100
-                    )
-                  : 0}
+                {weeklyProgressPercentage}
                 %
               </div>
             </div>
@@ -436,7 +459,7 @@ export default function Dashboard() {
               {habits.length > 0 ? (
                 habits.map((habit) => (
                   <div key={habit._id} style={habitRowStyle}>
-                    <div style={habitNameStyle}>{habit.name}</div>
+                    <div style={habitNameStyle}>{habit.title}</div>
                     <div style={daysGridStyle}>
                       {weekDays.map((day, index) => (
                         <div
@@ -489,13 +512,14 @@ export default function Dashboard() {
                   key={habit._id}
                   style={habitCardStyle(colorMap[habit._id])}
                 >
-                  <div style={habitCardTitleStyle}>{habit.name}</div>
+                  <div style={habitCardTitleStyle}>{habit.title}</div>
                   <div style={habitCardCountStyle}>
                     {getCompletionCountForHabit(habit._id)} completions
                   </div>
                   <button
+                    type="button"
                     style={completeButtonStyle}
-                    onClick={() => handleMarkComplete(habit._id)}
+                    onClick={(e) => handleMarkComplete(habit._id, e)}
                     onMouseEnter={(e) => (e.target.opacity = "0.9")}
                     onMouseLeave={(e) => (e.target.opacity = "1")}
                   >
