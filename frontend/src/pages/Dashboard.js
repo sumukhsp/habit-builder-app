@@ -1,6 +1,28 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import API from "../api/api";
+import CalendarHeatmap from "../components/CalendarHeatmap";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Tooltip,
+  Legend,
+  Filler,
+} from "chart.js";
+import { Line } from "react-chartjs-2";
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Tooltip,
+  Legend,
+  Filler
+);
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -10,6 +32,22 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [dailyGoalPercentage, setDailyGoalPercentage] = useState(0);
+  const [isMobile, setIsMobile] = useState(false);
+  const [themeMode, setThemeMode] = useState(() => {
+    const saved = localStorage.getItem("dashboard_theme");
+    return saved === "dark" || saved === "light" ? saved : "light";
+  });
+
+  useEffect(() => {
+    const update = () => setIsMobile(window.innerWidth <= 900);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("dashboard_theme", themeMode);
+  }, [themeMode]);
 
   const logout = () => {
     localStorage.removeItem("token");
@@ -59,10 +97,59 @@ export default function Dashboard() {
     fetchData();
   }, []);
 
+  // Request notification permission and schedule reminders
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  useEffect(() => {
+    const scheduleReminders = () => {
+      habits.forEach((habit) => {
+        if (!habit.reminderTime) return;
+        const [hour, minute] = habit.reminderTime.split(":").map(Number);
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0, 0);
+        let target = today;
+        if (target <= now) {
+          // If time passed today, schedule for next occurrence
+          if (habit.frequency === "daily") {
+            target.setDate(target.getDate() + 1);
+          } else if (habit.frequency === "weekly") {
+            target.setDate(target.getDate() + ((7 - now.getDay() + 1) % 7 || 7));
+          }
+        }
+        const msUntil = target.getTime() - now.getTime();
+        const timeoutId = setTimeout(() => {
+          if (Notification.permission === "granted") {
+            new Notification(`Habit Reminder: ${habit.title}`, {
+              body: habit.frequency === "daily" ? "Time to complete your daily habit!" : "Time to complete your weekly habit!",
+              icon: "/favicon.ico",
+            });
+          }
+          // Reschedule for next occurrence after notification
+          scheduleReminders();
+        }, msUntil);
+        // Store timeoutId for cleanup if needed
+        habit._reminderTimeoutId = timeoutId;
+      });
+    };
+    scheduleReminders();
+    // Cleanup on unmount or habits change
+    return () => {
+      habits.forEach((habit) => {
+        if (habit._reminderTimeoutId) clearTimeout(habit._reminderTimeoutId);
+      });
+    };
+  }, [habits]);
+
   const getWeekDays = () => {
     const days = [];
     const current = new Date(selectedDate);
-    const first = current.getDate() - current.getDay();
+    // Start week on Monday to match dayLabels (Mon..Sun)
+    const dayIndexMonStart = (current.getDay() + 6) % 7; // Mon=0 ... Sun=6
+    const first = current.getDate() - dayIndexMonStart;
 
     for (let i = 0; i < 7; i++) {
       const date = new Date(current.setDate(first + i));
@@ -98,10 +185,6 @@ export default function Dashboard() {
     );
   };
 
-  const getCompletionCountForHabit = (habitId) => {
-    return completions.filter((c) => String(c.habitId) === String(habitId)).length;
-  };
-
   const handleMarkComplete = async (habitId, e) => {
     if (e) e.preventDefault();
     try {
@@ -119,6 +202,96 @@ export default function Dashboard() {
   const colorMap = getHabitColorMap();
   const weekDays = getWeekDays();
   const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  const motivationalMessage = useMemo(() => {
+    const hour = new Date().getHours();
+    const timeGreeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+
+    if (!habits.length) {
+      return `${timeGreeting} — start small. Add one habit and build momentum.`;
+    }
+
+    if (dailyGoalPercentage >= 100) {
+      return `${timeGreeting} — goal crushed. Keep the streak alive tomorrow.`;
+    }
+
+    if (dailyGoalPercentage >= 60) {
+      return `${timeGreeting} — you’re close. One more completion can change your day.`;
+    }
+
+    return `${timeGreeting} — consistency beats intensity. Mark one habit complete.`;
+  }, [dailyGoalPercentage, habits.length]);
+
+  const bestCurrentStreak = useMemo(() => {
+    if (!habits.length) return 0;
+    return Math.max(...habits.map((h) => Number(h.streak || 0)));
+  }, [habits]);
+
+  const consistencyScore = useMemo(() => {
+    if (!habits.length) return 0;
+
+    const daysBack = 28;
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    const start = new Date(end);
+    start.setDate(start.getDate() - (daysBack - 1));
+    start.setHours(0, 0, 0, 0);
+
+    const uniquePairs = new Set(
+      completions
+        .filter((c) => {
+          const compDate = new Date(c.date);
+          return compDate >= start && compDate <= end;
+        })
+        .map((c) => `${String(c.habitId)}|${String(c.date).split("T")[0]}`)
+    );
+
+    const totalPossible = habits.length * daysBack;
+    return Math.min(Math.round((uniquePairs.size / totalPossible) * 100), 100);
+  }, [completions, habits]);
+
+  const weeklyTrend = useMemo(() => {
+    const days = [];
+    const labels = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - i);
+      days.push(d);
+      labels.push(
+        d.toLocaleDateString("en-US", {
+          weekday: "short",
+        })
+      );
+    }
+
+    const counts = days.map((d) => {
+      const dateStr = d.toISOString().split("T")[0];
+      const uniq = new Set(
+        completions
+          .filter((c) => c.date?.split("T")[0] === dateStr)
+          .map((c) => String(c.habitId))
+      );
+      return uniq.size;
+    });
+
+    return { labels, counts };
+  }, [completions]);
+
+  const dailyIntensityMap = useMemo(() => {
+    // Map date -> number of unique habits completed on that day
+    const map = {};
+    const sets = {};
+    (completions || []).forEach((c) => {
+      const day = String(c.date).split("T")[0];
+      if (!sets[day]) sets[day] = new Set();
+      sets[day].add(String(c.habitId));
+    });
+    Object.keys(sets).forEach((k) => {
+      map[k] = sets[k].size;
+    });
+    return map;
+  }, [completions]);
 
   const weeklyProgressPercentage = (() => {
     if (!habits.length) return 0;
@@ -141,9 +314,69 @@ export default function Dashboard() {
     return Math.min(Math.round((uniqueHabitDayPairs.size / totalPossible) * 100), 100);
   })();
 
+  const isDark = themeMode === "dark";
+  const palette = isDark
+    ? {
+        pageBg: "linear-gradient(135deg, #0b1020 0%, #1a1030 100%)",
+        cardBg: "#0f172a",
+        cardBorder: "rgba(255,255,255,0.10)",
+        text: "rgba(255,255,255,0.92)",
+        muted: "rgba(255,255,255,0.70)",
+        surface: "rgba(255,255,255,0.04)",
+        surface2: "rgba(255,255,255,0.06)",
+      }
+    : {
+        pageBg: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        cardBg: "#ffffff",
+        cardBorder: "rgba(2,6,23,0.08)",
+        text: "#0f172a",
+        muted: "#475569",
+        surface: "#f8fafc",
+        surface2: "rgba(2,6,23,0.04)",
+      };
+
+  const getWeeklyCompletionCountForHabit = (habitId) => {
+    return weekDays.reduce(
+      (acc, d) => acc + (isHabitCompletedOnDate(habitId, d) ? 1 : 0),
+      0
+    );
+  };
+
+  const ProgressRing = ({ percent, color }) => {
+    const size = 44;
+    const stroke = 6;
+    const r = (size - stroke) / 2;
+    const c = 2 * Math.PI * r;
+    const offset = c - (Math.max(0, Math.min(100, percent)) / 100) * c;
+    return (
+      <svg width={size} height={size} style={{ display: "block" }}>
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          stroke={palette.surface2}
+          strokeWidth={stroke}
+          fill="none"
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          stroke={color}
+          strokeWidth={stroke}
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={offset}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      </svg>
+    );
+  };
+
   const containerStyle = {
     minHeight: "100vh",
-    background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+    background: palette.pageBg,
     padding: "30px 20px",
     fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
   };
@@ -153,7 +386,7 @@ export default function Dashboard() {
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: "30px",
-    color: "white",
+    color: isDark ? palette.text : "white",
   };
 
   const greetingStyle = {
@@ -161,11 +394,19 @@ export default function Dashboard() {
     fontWeight: "600",
   };
 
+  const subGreetingStyle = {
+    marginTop: "8px",
+    fontSize: "14px",
+    lineHeight: "1.7",
+    color: isDark ? palette.muted : "rgba(255,255,255,0.92)",
+    maxWidth: "720px",
+  };
+
   const navButtonStyle = {
     padding: "10px 20px",
-    background: "rgba(255, 255, 255, 0.2)",
-    color: "white",
-    border: "1px solid rgba(255, 255, 255, 0.3)",
+    background: isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.2)",
+    color: isDark ? palette.text : "white",
+    border: isDark ? "1px solid rgba(255, 255, 255, 0.14)" : "1px solid rgba(255, 255, 255, 0.3)",
     borderRadius: "8px",
     cursor: "pointer",
     marginLeft: "10px",
@@ -173,12 +414,13 @@ export default function Dashboard() {
   };
 
   const cardStyle = {
-    background: "white",
+    background: palette.cardBg,
     borderRadius: "20px",
-    boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15)",
-    padding: "40px",
+    boxShadow: isDark ? "0 22px 70px rgba(0, 0, 0, 0.55)" : "0 20px 60px rgba(0, 0, 0, 0.15)",
+    padding: isMobile ? "22px" : "40px",
     maxWidth: "1400px",
     margin: "0 auto",
+    border: `1px solid ${palette.cardBorder}`,
   };
 
   const topSectionStyle = {
@@ -187,7 +429,7 @@ export default function Dashboard() {
     alignItems: "center",
     marginBottom: "30px",
     paddingBottom: "20px",
-    borderBottom: "1px solid #eee",
+    borderBottom: isDark ? "1px solid rgba(255,255,255,0.10)" : "1px solid #eee",
   };
 
   const datePickerStyle = {
@@ -195,7 +437,7 @@ export default function Dashboard() {
     alignItems: "center",
     gap: "10px",
     fontSize: "14px",
-    color: "#666",
+    color: palette.muted,
   };
 
   const dateSmallStyle = {
@@ -205,14 +447,15 @@ export default function Dashboard() {
 
   const mainGridStyle = {
     display: "grid",
-    gridTemplateColumns: "1fr 350px",
+    gridTemplateColumns: isMobile ? "1fr" : "1.2fr 0.8fr",
     gap: "30px",
   };
 
   const leftSectionStyle = {
-    background: "#f8f9fa",
+    background: palette.surface,
     borderRadius: "15px",
     padding: "25px",
+    border: `1px solid ${palette.cardBorder}`,
   };
 
   const rightSectionStyle = {
@@ -232,43 +475,66 @@ export default function Dashboard() {
     transition: "all 0.3s ease",
   };
 
-  const habitGridStyle = {
-    display: "grid",
-    gap: "15px",
+  const habitListStyle = {
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
   };
 
   const habitRowStyle = {
-    display: "flex",
+    display: "grid",
+    gridTemplateColumns: "6px 1fr auto",
+    gap: "14px",
+    padding: "14px",
+    borderRadius: "14px",
+    background: isDark ? "rgba(255,255,255,0.03)" : "#ffffff",
+    border: isDark ? "1px solid rgba(255,255,255,0.10)" : "1px solid rgba(2,6,23,0.06)",
+    boxShadow: isDark ? "0 16px 46px rgba(0,0,0,0.35)" : "0 10px 30px rgba(15,23,42,0.08)",
     alignItems: "center",
-    gap: "12px",
-    paddingBottom: "12px",
-    borderBottom: "1px solid #e0e0e0",
   };
 
-  const habitNameStyle = {
-    width: "80px",
-    fontWeight: "600",
-    fontSize: "13px",
-    color: "#333",
+  const habitTitleStyle = {
+    fontSize: "14px",
+    fontWeight: "750",
+    color: palette.text,
     overflow: "hidden",
     textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
   };
 
-  const daysGridStyle = {
+  const habitMetaStyle = {
+    marginTop: "4px",
+    fontSize: "12px",
+    color: palette.muted,
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    flexWrap: "wrap",
+  };
+
+  const weekChecksStyle = {
+    marginTop: "10px",
     display: "grid",
     gridTemplateColumns: "repeat(7, 1fr)",
     gap: "8px",
-    flex: 1,
+    maxWidth: "260px",
   };
 
-  const dayBoxStyle = (completed, color) => ({
-    width: "30px",
-    height: "30px",
-    borderRadius: "6px",
-    background: completed ? color : "#e0e0e0",
-    opacity: completed ? 1 : 0.3,
-    cursor: "pointer",
-    transition: "all 0.2s ease",
+  const checkCellStyle = (active, color) => ({
+    height: "24px",
+    borderRadius: "999px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "12px",
+    fontWeight: "800",
+    background: active ? color : palette.surface2,
+    color: active ? "white" : isDark ? "rgba(255,255,255,0.55)" : "rgba(2,6,23,0.45)",
+    border: active
+      ? "1px solid rgba(255,255,255,0.18)"
+      : isDark
+        ? "1px solid rgba(255,255,255,0.10)"
+        : "1px solid rgba(2,6,23,0.06)",
   });
 
   const dayHeaderStyle = {
@@ -276,13 +542,14 @@ export default function Dashboard() {
     gridTemplateColumns: "repeat(7, 1fr)",
     gap: "8px",
     marginBottom: "10px",
+    maxWidth: "260px",
   };
 
   const dayLabelStyle = {
     textAlign: "center",
     fontWeight: "600",
     fontSize: "12px",
-    color: "#999",
+    color: palette.muted,
     padding: "0 0 8px 0",
   };
 
@@ -292,12 +559,19 @@ export default function Dashboard() {
     gap: "15px",
   };
 
+  const metricsGridStyle = {
+    display: "grid",
+    gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr",
+    gap: "12px",
+  };
+
   const statBoxStyle = {
     background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
     color: "white",
     padding: "20px",
     borderRadius: "12px",
     textAlign: "center",
+    boxShadow: "0 14px 34px rgba(102, 126, 234, 0.35)",
   };
 
   const statNumberStyle = {
@@ -306,31 +580,15 @@ export default function Dashboard() {
     marginBottom: "5px",
   };
 
+  const statSubNumberStyle = {
+    fontSize: "12px",
+    opacity: 0.9,
+    marginTop: "2px",
+  };
+
   const statLabelStyle = {
     fontSize: "13px",
     opacity: 0.9,
-  };
-
-  const habitCardStyle = (color) => ({
-    background: "white",
-    borderLeft: `4px solid ${color}`,
-    padding: "15px",
-    borderRadius: "10px",
-    boxShadow: "0 2px 8px rgba(0, 0, 0, 0.1)",
-    flex: 1,
-  });
-
-  const habitCardTitleStyle = {
-    fontWeight: "600",
-    marginBottom: "8px",
-    fontSize: "14px",
-    color: "#333",
-  };
-
-  const habitCardCountStyle = {
-    fontSize: "12px",
-    color: "#999",
-    marginBottom: "10px",
   };
 
   const completeButtonStyle = {
@@ -349,7 +607,7 @@ export default function Dashboard() {
     return (
       <div style={containerStyle}>
         <div style={cardStyle}>
-          <p style={{ textAlign: "center", color: "#999" }}>Loading...</p>
+          <p style={{ textAlign: "center", color: palette.muted }}>Loading...</p>
         </div>
       </div>
     );
@@ -358,10 +616,25 @@ export default function Dashboard() {
   return (
     <div style={containerStyle}>
       <div style={headerStyle}>
-        <div style={greetingStyle}>
-          👋 Hey there, {userName.split(" ")[0]}
+        <div>
+          <div style={greetingStyle}>👋 Hey there, {userName.split(" ")[0]}</div>
+          <div style={subGreetingStyle}>{motivationalMessage}</div>
         </div>
         <div>
+          <button
+            style={navButtonStyle}
+            onClick={() => setThemeMode((m) => (m === "dark" ? "light" : "dark"))}
+            onMouseEnter={(e) =>
+              (e.target.style.background =
+                isDark ? "rgba(255, 255, 255, 0.12)" : "rgba(255, 255, 255, 0.3)")
+            }
+            onMouseLeave={(e) =>
+              (e.target.style.background =
+                isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.2)")
+            }
+          >
+            {isDark ? "Light" : "Dark"}
+          </button>
           <button
             style={navButtonStyle}
             onClick={() => navigate("/habits")}
@@ -396,7 +669,7 @@ export default function Dashboard() {
                 day: "numeric",
               })}
             </div>
-            <div style={{ fontSize: "18px", fontWeight: "600", color: "#333" }}>
+            <div style={{ fontSize: "18px", fontWeight: "600", color: palette.text }}>
               Week Overview
             </div>
           </div>
@@ -436,7 +709,7 @@ export default function Dashboard() {
           {/* Left Section - Habit Grid */}
           <div style={leftSectionStyle}>
             <div style={{ marginBottom: "20px" }}>
-              <div style={{ fontSize: "13px", color: "#999", marginBottom: "3px" }}>
+              <div style={{ fontSize: "13px", color: palette.muted, marginBottom: "3px" }}>
                 Weekly Progress
               </div>
               <div style={{ fontSize: "22px", fontWeight: "700", color: "#667eea" }}>
@@ -454,28 +727,72 @@ export default function Dashboard() {
               ))}
             </div>
 
-            {/* Habits Grid */}
-            <div style={habitGridStyle}>
+            {/* Habits List */}
+            <div style={habitListStyle}>
               {habits.length > 0 ? (
-                habits.map((habit) => (
-                  <div key={habit._id} style={habitRowStyle}>
-                    <div style={habitNameStyle}>{habit.title}</div>
-                    <div style={daysGridStyle}>
-                      {weekDays.map((day, index) => (
-                        <div
-                          key={index}
-                          style={dayBoxStyle(
-                            isHabitCompletedOnDate(habit._id, day),
-                            colorMap[habit._id]
-                          )}
-                          title={day.toLocaleDateString()}
-                        />
-                      ))}
+                habits.map((habit) => {
+                  const accent = colorMap[habit._id];
+                  const count = getWeeklyCompletionCountForHabit(habit._id);
+                  const pct = Math.round((count / 7) * 100);
+
+                  return (
+                    <div
+                      key={habit._id}
+                      style={{ ...habitRowStyle, cursor: "pointer" }}
+                      onClick={() => navigate(`/habits/${habit._id}`)}
+                      onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-1px)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.transform = "translateY(0)")}
+                    >
+                      <div style={{ background: accent, borderRadius: "999px", width: "6px", height: "100%" }} />
+
+                      <div style={{ minWidth: 0 }}>
+                        <div style={habitTitleStyle}>{habit.title}</div>
+                        <div style={habitMetaStyle}>
+                          <span>{habit.frequency === "daily" ? "Daily" : "Weekly"}</span>
+                          <span style={{ opacity: 0.7 }}>•</span>
+                          <span>🔥 {habit.streak || 0}</span>
+                          <span style={{ opacity: 0.7 }}>•</span>
+                          <span>🔔 {habit.reminderTime || "09:00"}</span>
+                        </div>
+
+                        <div style={weekChecksStyle}>
+                          {weekDays.map((day) => {
+                            const done = isHabitCompletedOnDate(habit._id, day);
+                            return (
+                              <div
+                                key={`${habit._id}-${day.toISOString()}`}
+                                title={day.toLocaleDateString()}
+                                style={checkCellStyle(done, accent)}
+                              >
+                                {done ? "✓" : ""}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div title={`${count}/7 this week`}>
+                          <ProgressRing percent={pct} color={accent} />
+                        </div>
+                        <button
+                          type="button"
+                          style={completeButtonStyle}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMarkComplete(habit._id, e);
+                          }}
+                          onMouseEnter={(e) => (e.target.opacity = "0.9")}
+                          onMouseLeave={(e) => (e.target.opacity = "1")}
+                        >
+                          Complete
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
-                <p style={{ color: "#999", textAlign: "center", marginTop: "20px" }}>
+                <p style={{ color: palette.muted, textAlign: "center", marginTop: "20px" }}>
                   No habits yet. Add one to get started!
                 </p>
               )}
@@ -495,43 +812,211 @@ export default function Dashboard() {
 
             {/* Statistics */}
             <div style={statisticsStyle}>
-              <div style={statBoxStyle}>
-                <div style={statNumberStyle}>{dailyGoalPercentage}%</div>
-                <div style={statLabelStyle}>daily goal achieved</div>
+              <div style={metricsGridStyle}>
+                <div style={statBoxStyle}>
+                  <div style={statNumberStyle}>{dailyGoalPercentage}%</div>
+                  <div style={statLabelStyle}>daily goal achieved</div>
+                </div>
+                <div style={statBoxStyle}>
+                  <div style={statNumberStyle}>{habits.length}</div>
+                  <div style={statLabelStyle}>active habits</div>
+                </div>
+                <div style={statBoxStyle}>
+                  <div style={statNumberStyle}>{bestCurrentStreak}</div>
+                  <div style={statLabelStyle}>best streak</div>
+                  <div style={statSubNumberStyle}>current days</div>
+                </div>
+                <div style={statBoxStyle}>
+                  <div style={statNumberStyle}>{consistencyScore}%</div>
+                  <div style={statLabelStyle}>consistency score</div>
+                  <div style={statSubNumberStyle}>last 28 days</div>
+                </div>
               </div>
-              <div style={statBoxStyle}>
-                <div style={statNumberStyle}>{habits.length}</div>
-                <div style={statLabelStyle}>total habits</div>
+
+              <div
+                style={{
+                  background: palette.cardBg,
+                  borderRadius: "14px",
+                  padding: "14px",
+                  border: `1px solid ${palette.cardBorder}`,
+                  boxShadow: isDark
+                    ? "0 18px 55px rgba(0,0,0,0.45)"
+                    : "0 12px 30px rgba(15, 23, 42, 0.08)",
+                }}
+              >
+                <CalendarHeatmap
+                  title="Monthly activity"
+                  dateToCount={dailyIntensityMap}
+                  isDark={isDark}
+                  palette={palette}
+                />
+              </div>
+
+              <div
+                style={{
+                  background: palette.cardBg,
+                  borderRadius: "14px",
+                  padding: "14px 14px 10px 14px",
+                  border: `1px solid ${palette.cardBorder}`,
+                  boxShadow: isDark
+                    ? "0 18px 55px rgba(0,0,0,0.45)"
+                    : "0 12px 30px rgba(15, 23, 42, 0.08)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "12px",
+                    fontWeight: "700",
+                    color: palette.text,
+                    letterSpacing: "0.04em",
+                    textTransform: "uppercase",
+                    marginBottom: "10px",
+                  }}
+                >
+                  Weekly trend
+                </div>
+                <div style={{ height: "120px" }}>
+                  <Line
+                    data={{
+                      labels: weeklyTrend.labels,
+                      datasets: [
+                        {
+                          label: "Completions",
+                          data: weeklyTrend.counts,
+                          fill: true,
+                          tension: 0.35,
+                          borderColor: "#667eea",
+                          backgroundColor: "rgba(102, 126, 234, 0.18)",
+                          pointRadius: 3,
+                          pointHoverRadius: 4,
+                          pointBackgroundColor: "#667eea",
+                        },
+                      ],
+                    }}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: {
+                        legend: { display: false },
+                        tooltip: { mode: "index", intersect: false },
+                      },
+                      scales: {
+                        x: {
+                          grid: { display: false },
+                          ticks: { color: isDark ? "rgba(255,255,255,0.70)" : "#64748b", font: { size: 11 } },
+                        },
+                        y: {
+                          beginAtZero: true,
+                          grid: { color: isDark ? "rgba(255,255,255,0.10)" : "rgba(148, 163, 184, 0.25)" },
+                          ticks: { color: isDark ? "rgba(255,255,255,0.70)" : "#64748b", font: { size: 11 }, precision: 0 },
+                        },
+                      },
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Reminders Section */}
+              <div
+                style={{
+                  background: palette.cardBg,
+                  borderRadius: "14px",
+                  padding: "16px",
+                  border: `1px solid ${palette.cardBorder}`,
+                  boxShadow: isDark
+                    ? "0 18px 55px rgba(0,0,0,0.45)"
+                    : "0 12px 30px rgba(15, 23, 42, 0.08)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "12px",
+                    fontWeight: "700",
+                    color: palette.text,
+                    letterSpacing: "0.04em",
+                    textTransform: "uppercase",
+                    marginBottom: "12px",
+                  }}
+                >
+                  Scheduled Reminders
+                </div>
+                {habits.length > 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    {habits.map((habit) => (
+                      <div
+                        key={habit._id}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "8px 10px",
+                          background: isDark ? "rgba(255,255,255,0.04)" : "#f8fafc",
+                          borderRadius: "8px",
+                          border: isDark ? "1px solid rgba(255,255,255,0.10)" : "1px solid #e2e8f0",
+                        }}
+                      >
+                        <div style={{ fontSize: "13px", color: palette.muted }}>
+                          <span style={{ fontWeight: "600", color: palette.text }}>{habit.title}</span>
+                          <span style={{ marginLeft: "8px", color: palette.muted }}>
+                            {habit.reminderTime || "09:00"} • {habit.frequency}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          style={{
+                            padding: "4px 10px",
+                            fontSize: "11px",
+                            background: "#667eea",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                            transition: "all 0.2s ease",
+                          }}
+                          onClick={() => {
+                            console.log("Test clicked for habit:", habit.title);
+                            console.log("Notification.permission:", Notification.permission);
+                            if ("Notification" in window) {
+                              if (Notification.permission === "granted") {
+                                new Notification(`Test Reminder: ${habit.title}`, {
+                                  body: "This is a test notification. You’ll receive reminders at the scheduled time.",
+                                  icon: "/favicon.ico",
+                                });
+                                alert("Test notification sent!");
+                              } else if (Notification.permission === "default") {
+                                Notification.requestPermission().then((perm) => {
+                                  if (perm === "granted") {
+                                    new Notification(`Test Reminder: ${habit.title}`, {
+                                      body: "This is a test notification. You’ll receive reminders at the scheduled time.",
+                                      icon: "/favicon.ico",
+                                    });
+                                    alert("Test notification sent!");
+                                  } else {
+                                    alert("Notification permission denied. Please enable notifications in your browser settings.");
+                                  }
+                                });
+                              } else {
+                                alert("Browser notifications are blocked. Please enable them in your browser settings.");
+                              }
+                            } else {
+                              alert("This browser does not support notifications.");
+                            }
+                          }}
+                          onMouseEnter={(e) => (e.target.style.background = "#5a67d8")}
+                          onMouseLeave={(e) => (e.target.style.background = "#667eea")}
+                        >
+                          Test
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: "13px", color: palette.muted, textAlign: "center", padding: "12px 0" }}>
+                    No habits to schedule reminders for.
+                  </div>
+                )}
               </div>
             </div>
-
-            {/* Habit List */}
-            {habits.length > 0 ? (
-              habits.map((habit) => (
-                <div
-                  key={habit._id}
-                  style={habitCardStyle(colorMap[habit._id])}
-                >
-                  <div style={habitCardTitleStyle}>{habit.title}</div>
-                  <div style={habitCardCountStyle}>
-                    {getCompletionCountForHabit(habit._id)} completions
-                  </div>
-                  <button
-                    type="button"
-                    style={completeButtonStyle}
-                    onClick={(e) => handleMarkComplete(habit._id, e)}
-                    onMouseEnter={(e) => (e.target.opacity = "0.9")}
-                    onMouseLeave={(e) => (e.target.opacity = "1")}
-                  >
-                    Mark Complete
-                  </button>
-                </div>
-              ))
-            ) : (
-              <p style={{ color: "#999", textAlign: "center" }}>
-                No habits to display
-              </p>
-            )}
           </div>
         </div>
       </div>

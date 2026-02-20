@@ -14,9 +14,25 @@ const streakSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  currentStartDate: {
+    type: Date,
+    default: null
+  },
+  currentEndDate: {
+    type: Date,
+    default: null
+  },
   longestStreak: {
     type: Number,
     default: 0
+  },
+  longestStartDate: {
+    type: Date,
+    default: null
+  },
+  longestEndDate: {
+    type: Date,
+    default: null
   }
 });
 

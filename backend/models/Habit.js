@@ -13,6 +13,10 @@ const habitSchema = new mongoose.Schema({
     type: String,
     enum: ["daily", "weekly"],
     default: "daily"
+  },
+  reminderTime: {
+    type: String,
+    default: "09:00"
   }
 }, { timestamps: true });
 

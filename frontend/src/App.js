@@ -3,6 +3,7 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
 import Habits from "./pages/Habits";
+import HabitDetail from "./pages/HabitDetail";
 
 function RequireAuth({ children }) {
   const token = localStorage.getItem("token");
@@ -30,6 +31,15 @@ function App() {
           element={
             <RequireAuth>
               <Habits />
+            </RequireAuth>
+          }
+        />
+
+        <Route
+          path="/habits/:id"
+          element={
+            <RequireAuth>
+              <HabitDetail />
             </RequireAuth>
           }
         />

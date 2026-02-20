@@ -58,19 +58,29 @@ exports.markComplete = async (req, res) => {
         habitId,
         userId,
         currentStreak: 1,
-        longestStreak: 1
+        currentStartDate: today,
+        currentEndDate: today,
+        longestStreak: 1,
+        longestStartDate: today,
+        longestEndDate: today,
       });
     } else {
       if (yesterdayCompletion) {
         // continue streak
         streak.currentStreak += 1;
+        if (!streak.currentStartDate) streak.currentStartDate = today;
+        streak.currentEndDate = today;
       } else {
         // reset streak
         streak.currentStreak = 1;
+        streak.currentStartDate = today;
+        streak.currentEndDate = today;
       }
 
       if (streak.currentStreak > streak.longestStreak) {
         streak.longestStreak = streak.currentStreak;
+        streak.longestStartDate = streak.currentStartDate;
+        streak.longestEndDate = streak.currentEndDate;
       }
 
       await streak.save();
@@ -85,5 +95,27 @@ exports.markComplete = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Failed to mark habit complete" });
+  }
+};
+
+exports.getHabitCompletions = async (req, res) => {
+  try {
+    const userId = req.user;
+    const { habitId } = req.params;
+
+    if (!habitId) {
+      return res.status(400).json({ message: "Habit ID is required" });
+    }
+
+    const habit = await Habit.findOne({ _id: habitId, userId });
+    if (!habit) {
+      return res.status(404).json({ message: "Habit not found" });
+    }
+
+    const completions = await CompletionLog.find({ userId, habitId }).sort({ date: 1 });
+    res.json(completions);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed to fetch habit completions" });
   }
 };

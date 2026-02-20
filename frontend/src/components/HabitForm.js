@@ -4,6 +4,7 @@ import API from "../api/api";
 function HabitForm({ refreshHabits }) {
   const [title, setTitle] = useState("");
   const [frequency, setFrequency] = useState("daily");
+  const [reminderTime, setReminderTime] = useState("09:00");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -18,9 +19,10 @@ function HabitForm({ refreshHabits }) {
 
     setLoading(true);
     try {
-      await API.post("/habits", { title: title.trim(), frequency });
+      await API.post("/habits", { title: title.trim(), frequency, reminderTime });
       setTitle("");
       setFrequency("daily");
+      setReminderTime("09:00");
       refreshHabits();
     } catch (err) {
       const msg = err?.response?.data?.message || "Failed to create habit";
@@ -47,7 +49,7 @@ function HabitForm({ refreshHabits }) {
 
   const formStyle = {
     display: "grid",
-    gridTemplateColumns: "1fr 200px 150px",
+    gridTemplateColumns: "1fr 200px 150px 150px",
     gap: "12px",
     alignItems: "end",
   };
@@ -124,6 +126,16 @@ function HabitForm({ refreshHabits }) {
           <option value="daily">Daily</option>
           <option value="weekly">Weekly</option>
         </select>
+
+        <input
+          type="time"
+          value={reminderTime}
+          onChange={(e) => setReminderTime(e.target.value)}
+          style={inputStyle}
+          onFocus={(e) => (e.target.style.borderColor = "#667eea")}
+          onBlur={(e) => (e.target.style.borderColor = "#e0e0e0")}
+          disabled={loading}
+        />
 
         <button
           type="submit"

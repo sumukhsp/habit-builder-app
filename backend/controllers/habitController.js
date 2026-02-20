@@ -7,7 +7,8 @@ exports.createHabit = async (req, res) => {
     const habit = await Habit.create({
       userId: req.user,
       title: req.body.title,
-      frequency: req.body.frequency
+      frequency: req.body.frequency,
+      reminderTime: req.body.reminderTime || "09:00"
     });
 
     res.status(201).json(habit);
@@ -42,6 +43,30 @@ exports.getHabits = async (req, res) => {
     res.json(habitsWithStreak);
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch habits" });
+  }
+};
+
+// Get single habit for logged-in user
+exports.getHabitById = async (req, res) => {
+  try {
+    const habit = await Habit.findOne({ _id: req.params.id, userId: req.user });
+    if (!habit) {
+      return res.status(404).json({ message: "Habit not found" });
+    }
+
+    const streak = await Streak.findOne({ userId: req.user, habitId: habit._id });
+
+    res.json({
+      ...habit.toObject(),
+      streak: streak?.currentStreak || 0,
+      longestStreak: streak?.longestStreak || 0,
+      currentStartDate: streak?.currentStartDate || null,
+      currentEndDate: streak?.currentEndDate || null,
+      longestStartDate: streak?.longestStartDate || null,
+      longestEndDate: streak?.longestEndDate || null,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch habit" });
   }
 };
 

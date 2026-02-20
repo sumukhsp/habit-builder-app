@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import API from "../api/api";
 
@@ -10,7 +10,15 @@ export default function Signup() {
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isMobile, setIsMobile] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const update = () => setIsMobile(window.innerWidth <= 768);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
 
   const handleSignup = async (e) => {
     e.preventDefault();
@@ -52,6 +60,7 @@ export default function Signup() {
 
   const cardStyle = {
     display: "flex",
+    flexDirection: isMobile ? "column" : "row",
     borderRadius: "20px",
     overflow: "hidden",
     boxShadow: "0 20px 60px rgba(0, 0, 0, 0.3)",
@@ -62,16 +71,13 @@ export default function Signup() {
 
   const leftSectionStyle = {
     flex: 1,
-    background: `linear-gradient(135deg, rgba(138, 43, 226, 0.3), rgba(75, 0, 130, 0.3)), 
-                  url('https://images.unsplash.com/photo-1552664730-d307ca884978?w=500&q=80')`,
-    backgroundSize: "cover",
-    backgroundPosition: "center",
+    background: "linear-gradient(135deg, rgba(138, 43, 226, 0.28), rgba(75, 0, 130, 0.35))",
     display: "flex",
     flexDirection: "column",
-    justifyContent: "flex-end",
-    padding: "60px 40px",
+    justifyContent: "center",
+    padding: isMobile ? "36px 24px" : "60px 44px",
     color: "white",
-    minHeight: "600px",
+    minHeight: isMobile ? "320px" : "600px",
     position: "relative",
   };
 
@@ -84,7 +90,7 @@ export default function Signup() {
 
   const rightSectionStyle = {
     flex: 1,
-    padding: "60px 40px",
+    padding: isMobile ? "36px 24px" : "60px 40px",
     display: "flex",
     flexDirection: "column",
     justifyContent: "center",
