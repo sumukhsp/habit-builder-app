@@ -203,6 +203,17 @@ export default function HabitDetail() {
     return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   };
 
+  const formatTime12h = (t) => {
+    if (!t) return "";
+    const [hhRaw, mmRaw] = String(t).split(":");
+    const hh = parseInt(hhRaw, 10);
+    const mm = parseInt(mmRaw, 10);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return String(t);
+    const ampm = hh >= 12 ? "PM" : "AM";
+    const hour12 = ((hh + 11) % 12) + 1;
+    return `${hour12}:${String(mm).padStart(2, "0")} ${ampm}`;
+  };
+
   const longestRangeLabel = useMemo(() => {
     if (!habit?.longestStartDate || !habit?.longestEndDate) return "";
     return `${formatDate(habit.longestStartDate)} → ${formatDate(habit.longestEndDate)}`;
@@ -386,7 +397,7 @@ export default function HabitDetail() {
               <span style={{ opacity: 0.7 }}>•</span>
               <span>🏆 Best: {habit.longestStreak || 0}</span>
               <span style={{ opacity: 0.7 }}>•</span>
-              <span>🔔 {habit.reminderTime || "09:00"}</span>
+              <span>🔔 {formatTime12h(habit.reminderTime || "09:00")}</span>
             </div>
           </div>
 
