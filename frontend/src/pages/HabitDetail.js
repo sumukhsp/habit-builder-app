@@ -155,6 +155,24 @@ export default function HabitDetail() {
     return { labels, counts };
   }, [completions]);
 
+  const percentOverTime = useMemo(() => {
+    // last 28 days: cumulative completion percentage up to each day
+    const windowDays = 28;
+    const days = getLastNDays(windowDays);
+    const labels = days.map((d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" }));
+
+    let completedSoFar = 0;
+    const percents = days.map((d, idx) => {
+      const key = d.toISOString().split("T")[0];
+      if (completionDatesSet.has(key)) completedSoFar += 1;
+      const expectedSoFar = (habit?.frequency || "daily") === "weekly" ? Math.max(1, Math.ceil((idx + 1) / 7)) : idx + 1;
+      const pct = Math.min(Math.round((completedSoFar / expectedSoFar) * 100), 100);
+      return pct;
+    });
+
+    return { labels, percents };
+  }, [completionDatesSet, habit?.frequency]);
+
   const completionScore = useMemo(() => {
     const freq = habit?.frequency || "daily";
     const windowDays = 28;
@@ -459,6 +477,49 @@ export default function HabitDetail() {
                   }}
                 />
               </div>
+            </div>
+          </div>
+
+          <div
+            style={cardStyle}
+            onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-2px)")}
+            onMouseLeave={(e) => (e.currentTarget.style.transform = "translateY(0)")}
+          >
+            <div style={cardTitleStyle}>Completion % over time</div>
+            <div style={{ height: "190px" }}>
+              <Line
+                data={{
+                  labels: percentOverTime.labels,
+                  datasets: [
+                    {
+                      label: "Completion %",
+                      data: percentOverTime.percents,
+                      fill: true,
+                      tension: 0.35,
+                      borderColor: "#22c55e",
+                      backgroundColor: "rgba(34,197,94,0.14)",
+                      pointRadius: 0,
+                    },
+                  ],
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: { legend: { display: false } },
+                  scales: {
+                    x: {
+                      grid: { display: false },
+                      ticks: { color: palette.muted, maxTicksLimit: 8 },
+                    },
+                    y: {
+                      beginAtZero: true,
+                      max: 100,
+                      grid: { color: isDark ? "rgba(255,255,255,0.10)" : "rgba(148,163,184,0.25)" },
+                      ticks: { color: palette.muted, callback: (v) => `${v}%` },
+                    },
+                  },
+                }}
+              />
             </div>
           </div>
 

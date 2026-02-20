@@ -17,9 +17,10 @@ exports.markComplete = async (req, res) => {
       return res.status(404).json({ message: "Habit not found" });
     }
 
-    const today = new Date();
-    today.setHours(0,0,0,0);
-
+    // Day boundaries (used for 1-completion-per-day checks and streak logic)
+    const now = new Date();
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(today.getDate() + 1);
 
@@ -38,7 +39,7 @@ exports.markComplete = async (req, res) => {
     const completion = await CompletionLog.create({
       habitId,
       userId,
-      date: new Date(),
+      date: now
     });
 
     // ---- STREAK LOGIC FIX ----
