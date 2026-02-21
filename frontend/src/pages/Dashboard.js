@@ -346,9 +346,19 @@ export default function Dashboard() {
   const headerStyle = {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "center",
     marginBottom: "30px",
     color: isDark ? palette.text : "white",
+    flexDirection: isMobile ? "column" : "row",
+    gap: isMobile ? "14px" : "0px",
+    alignItems: isMobile ? "flex-start" : "center",
+  };
+
+  const headerRightStyle = {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "10px",
+    width: isMobile ? "100%" : "auto",
+    justifyContent: isMobile ? "flex-start" : "flex-end",
   };
 
   const greetingStyle = {
@@ -371,8 +381,9 @@ export default function Dashboard() {
     border: isDark ? "1px solid rgba(255, 255, 255, 0.14)" : "1px solid rgba(255, 255, 255, 0.3)",
     borderRadius: "8px",
     cursor: "pointer",
-    marginLeft: "10px",
+    marginLeft: "0px",
     transition: "all 0.3s ease",
+    whiteSpace: "nowrap",
   };
 
   const cardStyle = {
@@ -582,7 +593,7 @@ export default function Dashboard() {
           <div style={greetingStyle}>👋 Hey there, {userName.split(" ")[0]}</div>
           <div style={subGreetingStyle}>{motivationalMessage}</div>
         </div>
-        <div>
+        <div style={headerRightStyle}>
           <button
             style={navButtonStyle}
             onClick={() => setThemeMode((m) => (m === "dark" ? "light" : "dark"))}
